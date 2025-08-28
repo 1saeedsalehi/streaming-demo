@@ -1,4 +1,8 @@
+using FlightStreamingDemo.Models;
 using FlightStreamingDemo.Providers;
+using Microsoft.Extensions.Options;
+using System.Text.Json;
+using System.Threading.Channels;
 
 var builder = WebApplication.CreateBuilder(args);
 // Register providers and search service
@@ -20,22 +24,39 @@ app.MapGet("/api/flights/search", async (
     DateOnly date,
     CancellationToken ct) =>
 {
-    //TODO: implement the flight search logic here
-    //Tip: use NDJSON for outpyt emits one JSON object per line as results arrive
+    var options = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+
     http.Response.ContentType = "application/x-ndjson";
     var providers = http.RequestServices.GetServices<IFlightProvider>();
+    var channel = Channel.CreateUnbounded<FlightResult>();
+
+    // Producer tasks
     var tasks = providers.Select(async provider =>
     {
-        await foreach (var result in provider.SearchAsync(from, to, date, ct))
+        await foreach (var result in provider.SearchAsync(from, to, date, ct).WithCancellation(ct))
         {
-            await http.Response.WriteAsJsonAsync(result, ct);
-
-            // Write a newline character to separate this JSON object from the next one.
-            await http.Response.Body.WriteAsync("\n"u8.ToArray(), ct);
+            await channel.Writer.WriteAsync(result, ct);
         }
     });
 
+    // Consumer task
+    var consumer = Task.Run(async () =>
+    {
+        await foreach (var result in channel.Reader.ReadAllAsync(ct))
+        {
+            await JsonSerializer.SerializeAsync(http.Response.Body, result, options, ct);
+            await http.Response.Body.WriteAsync("\n"u8.ToArray(), ct);
+            await http.Response.Body.FlushAsync(ct);
+        }
+    }, ct);
+
     await Task.WhenAll(tasks);
+    channel.Writer.Complete();
+    await consumer;
 });
 
 app.Run();

@@ -1,4 +1,5 @@
 using FlightStreamingDemo.Models;
+using System.Runtime.CompilerServices;
 
 namespace FlightStreamingDemo.Providers;
 
@@ -6,7 +7,7 @@ public sealed class EmiratesFlightProvider : IFlightProvider
 {
     public string Name => "Emirates";
 
-    public async IAsyncEnumerable<FlightResult> SearchAsync(string from, string to, DateOnly date, CancellationToken cancellationToken)
+    public async IAsyncEnumerable<FlightResult> SearchAsync(string from, string to, DateOnly date, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var random = Random.Shared;
         await Task.Delay(random.Next(200, 3000), cancellationToken);
