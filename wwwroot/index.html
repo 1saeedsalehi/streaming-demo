@@ -1,0 +1,303 @@
+﻿<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wyszukiwarka Lotów - Wyniki Strumieniowe</title>
+    <style>
+        /* --- Global Styles & Fonts --- */
+        :root {
+            --primary-color: #007bff;
+            --light-gray: #f8f9fa;
+            --medium-gray: #e9ecef;
+            --dark-gray: #6c757d;
+            --text-color: #212529;
+            --border-radius: 8px;
+            --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--light-gray);
+            color: var(--text-color);
+            margin: 0;
+            padding: 24px;
+            display: flex;
+            justify-content: center;
+        }
+
+        /* --- Main App Container --- */
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: #fff;
+            padding: 24px 32px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-top: 0;
+        }
+
+        p {
+            color: var(--dark-gray);
+            margin-bottom: 24px;
+        }
+
+        /* --- Search Form --- */
+        #search-form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            align-items: flex-end;
+            margin-bottom: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-weight: 500;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        input[type="date"] {
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: var(--border-radius);
+            font-size: 16px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: var(--border-radius);
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            height: 42px; /* Align with inputs */
+        }
+
+            button:hover {
+                background-color: #0056b3;
+            }
+
+            button:disabled {
+                background-color: #a0c7ff;
+                cursor: not-allowed;
+            }
+
+        /* --- Status & Results --- */
+        #status {
+            color: var(--dark-gray);
+            margin-bottom: 24px;
+            min-height: 20px;
+        }
+
+        #results-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .flight-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px;
+            background: var(--light-gray);
+            border: 1px solid var(--medium-gray);
+            border-radius: var(--border-radius);
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeIn 0.5s forwards;
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .flight-info .provider {
+            font-weight: 600;
+            font-size: 18px;
+        }
+
+        .flight-info .route,
+        .flight-info .flight-number {
+            color: var(--dark-gray);
+            font-size: 14px;
+        }
+
+        .flight-price .price {
+            font-weight: 600;
+            font-size: 20px;
+        }
+
+        .flight-price .date {
+            color: var(--dark-gray);
+            font-size: 14px;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Ulepszona Rezerwacja Lotów – Wyniki Strumieniowe</h1>
+        <p>Wyniki renderują się przyrostowo dzięki strumieniowaniu NDJSON.</p>
+
+        <form id="search-form">
+            <div class="form-group">
+                <label for="from">Z</label>
+                <input type="text" id="from" value="AMS" required>
+            </div>
+            <div class="form-group">
+                <label for="to">Do</label>
+                <input type="text" id="to" value="NYC" required>
+            </div>
+            <div class="form-group">
+                <label for="date">Data</label>
+                <input type="date" id="date" required>
+            </div>
+            <button type="submit" id="search-button">Szukaj</button>
+        </form>
+
+        <div id="status">Wprowadź dane i kliknij Szukaj.</div>
+        <div id="results-container"></div>
+    </div>
+
+    <script>
+        // --- Get DOM Elements ---
+        const searchForm = document.getElementById('search-form');
+        const fromInput = document.getElementById('from');
+        const toInput = document.getElementById('to');
+        const dateInput = document.getElementById('date');
+        const statusDiv = document.getElementById('status');
+        const resultsContainer = document.getElementById('results-container');
+        const searchButton = document.getElementById('search-button');
+
+        // --- Set Default Date to Today ---
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        dateInput.value = `${year}-${month}-${day}`;
+
+        // --- Form Submit Event Listener ---
+        searchForm.addEventListener('submit', async (event) => {
+            event.preventDefault(); // Prevent page reload
+
+            // --- 1. Prepare for a new search ---
+            statusDiv.textContent = 'Szukanie...';
+            resultsContainer.innerHTML = ''; // Clear previous results
+            searchButton.disabled = true;
+            let resultsFound = false;
+
+            const from = fromInput.value;
+            const to = toInput.value;
+            const date = dateInput.value;
+
+            // --- 2. Build the API URL ---
+            // WAŻNE: Upewnij się, że port (np. 5001) jest zgodny z tym,
+            // na którym uruchomiony jest Twój backend ASP.NET Core.
+            const apiUrl = `/api/flights/search?from=${from}&to=${to}&date=${date}`;
+
+            try {
+                // --- 3. Fetch the streaming data ---
+                const response = await fetch(apiUrl);
+
+                if (!response.ok) {
+                    throw new Error(`Błąd serwera: ${response.statusText}`);
+                }
+
+                // --- 4. Process the NDJSON stream ---
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                // Read from the stream chunk by chunk
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        break; // Stream finished
+                    }
+
+                    // Decode the chunk and add it to our buffer
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // Process complete lines (JSON objects) from the buffer
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // Keep any partial line for the next chunk
+
+                    for (const line of lines) {
+                        if (line.trim() === '') continue;
+
+                        resultsFound = true;
+                        const flight = JSON.parse(line);
+                        displayFlight(flight);
+                    }
+                }
+
+                // --- 5. Finalize the search ---
+                if (resultsFound) {
+                    statusDiv.textContent = 'Zakończono.';
+                } else {
+                    statusDiv.textContent = 'Nie znaleziono lotów dla podanych kryteriów.';
+                }
+
+            } catch (error) {
+                console.error('Wystąpił błąd podczas wyszukiwania:', error);
+                statusDiv.textContent = `Błąd: ${error.message}. Sprawdź konsolę deweloperską.`;
+            } finally {
+                searchButton.disabled = false; // Re-enable the search button
+            }
+        });
+
+        // --- Function to create and display a flight card ---
+        function displayFlight(flight) {
+            const card = document.createElement('div');
+            card.className = 'flight-card';
+
+            // Format the price to be more readable
+            const formattedPrice = new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD'
+            }).format(flight.priceUsd);
+
+            console.log(flight)
+
+            card.innerHTML = `
+                <div class="flight-info">
+                    <div class="provider">${flight.provider}</div>
+                    <div class="route">${flight.from} → ${flight.to}</div>
+                    <div class="flight-number">Lot ${flight.flightNumber}</div>
+                </div>
+                <div class="flight-price">
+                    <div class="price">${formattedPrice}</div>
+                    <div class="date">${flight.date}</div>
+                </div>
+            `;
+            resultsContainer.appendChild(card);
+        }
+    </script>
+</body>
+</html>

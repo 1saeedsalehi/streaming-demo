@@ -1,4 +1,5 @@
 using FlightStreamingDemo.Models;
+using System.Runtime.CompilerServices;
 
 namespace FlightStreamingDemo.Providers;
 
@@ -6,7 +7,7 @@ public sealed class EmiratesFlightProvider : IFlightProvider
 {
     public string Name => "Emirates";
 
-    public async Task<IReadOnlyList<FlightResult>> SearchAsync(string from, string to, DateOnly date, CancellationToken cancellationToken)
+    public async IAsyncEnumerable<FlightResult> SearchAsync(string from, string to, DateOnly date, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var random = Random.Shared;
         await Task.Delay(random.Next(200, 3000), cancellationToken);
@@ -17,8 +18,8 @@ public sealed class EmiratesFlightProvider : IFlightProvider
         {
             var price = Math.Round((decimal)(300 + random.NextDouble() * 700), 2);
             var flightNumber = "EK" + random.Next(100, 999);
-            results.Add(new FlightResult(Name, from.ToUpperInvariant(), to.ToUpperInvariant(), date, flightNumber, price));
+            var result = new FlightResult(Name, from.ToUpperInvariant(), to.ToUpperInvariant(), date, flightNumber, price);
+            yield return result;
         }
-        return results;
     }
 }
